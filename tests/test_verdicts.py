@@ -19,7 +19,7 @@ def test_main_verdict_kinds_follow_the_two_flags():
     assert ev.verdict_main(S0, _main())[0] == "success"
     kind, text = ev.verdict_main(S0, _main(**{"global": False, "certified": False, "gap": 0.5162, "value": 48.4133}))
     assert kind == "info" and "unter dem Optimum" in text and "0,5162" in text and "**nein**" in text
-    assert ev.verdict_main(S0, _main(certified=False))[0] == "warning"                         # Optimum erreicht, aber kein Zertifikat (zu grobe Toleranz)
+    assert ev.verdict_main(S0, _main(certified=False))[0] == "warning"                         # bis auf die Schwelle am Optimum, aber kein Zertifikat (Fixpunkt knapp darunter oder zu grobe Toleranz)
     assert ev.verdict_main(S0, _main(**{"global": False}))[0] == "warning"                       # Zertifikat ja, aber unter dem Optimum: dürfte nie vorkommen
 
 

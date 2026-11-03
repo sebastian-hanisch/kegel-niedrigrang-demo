@@ -110,7 +110,7 @@ def test_the_rank_scan_on_the_default_graph(scan):
 
 
 def test_the_smallest_rank_grows_slowly_with_n():
-    """README: kleinster Rang mit mindestens 95 % auf G(n, 0,3): n = 10 → 3, n = 20 → 3, n = 30 → 4 (Band je ±1), weit unter √(2n)."""
+    """README: kleinster Rang mit mindestens 95 % auf G(n, 0,3): n = 10 → 3, n = 20 → 3, n = 30 → 4 (Band je ±1), unter √(2n)."""
     got = {n: ev.scan_view(ev.Settings(n=n))["smallest"] for n in (10, 20, 30)}
     assert got[10] in (2, 3, 4) and got[20] in (3, 4) and got[30] in (3, 4, 5)
     assert all(got[n] < math.sqrt(2 * n) for n in got) and got[30] >= got[10]
@@ -125,7 +125,7 @@ def test_the_certificate_separates_optima_and_traps(scan):
 
 
 def test_a_trap_has_a_strongly_negative_eigenvalue_over_many_graphs():
-    """README: Fallen haben λ_min(Z(V)) ≤ −0,06 (n = 20 und 30, Toleranz ≤ 10⁻⁶), Optima ≥ −4·10⁻³ bei Toleranz 10⁻⁸ (hier Toleranz 10⁻¹⁰: ≥ −10⁻³)."""
+    """README: Fallen haben λ_min(Z(V)) < −0,03 (n = 20 und 30, Toleranz ≤ 10⁻⁶), Optima ≥ −4·10⁻³ bei Toleranz 10⁻⁸ (hier Toleranz 10⁻¹⁰: ≥ −10⁻³)."""
     rng = np.random.default_rng(3)
     glob, trap = [], []
     for n, pe in ((20, 0.5), (30, 0.3)):
@@ -172,7 +172,7 @@ def test_the_rounding_acts_on_v_alone(main):
     """README / App: Rang-7-Faktor des Standardgraphen: SDP-Wert 40,4393, erwarteter Schnitt 37,6011, Mittel von 2 000 Hyperebenen innerhalb von 4 Standardfehlern, bester Schnitt = exakter Schnitt 39."""
     r = ev.rounding_view(main, S0.seed)
     assert r["value"] == pytest.approx(40.4393, abs=5e-4) and r["expected"] == pytest.approx(37.6011, abs=1e-3) and abs(r["mean"] - r["expected"]) < 4 * r["stderr"] and r["best"] == 39.0 and r["exact"] == 39.0 and r["p"] == 7 and r["n"] == 20
-    assert r["expected"] >= R.ALPHA_GW * r["value"] - 1e-6 and r["expected"] == pytest.approx(R.expected_rounding(main["W"], S.solve(main["W"]).X), abs=0.05)   # README: der erwartete Schnitt hängt an der Optimallösung (37,6011 aus V gegen 37,6025 aus dem Mittelpunkt des inneren Punkts)
+    assert r["expected"] >= R.ALPHA_GW * r["value"] - 1e-6 and r["expected"] == pytest.approx(R.expected_rounding(main["W"], S.solve(main["W"]).X), abs=0.05)   # README: der erwartete Schnitt hängt vom Punkt X ab, nicht vom Zielwert (37,6011 aus V bei Toleranz 1e-10 gegen 37,6025 aus dem Mittelpunkt des inneren Punkts)
     assert r["expected"] != pytest.approx(R.expected_rounding(main["W"], S.solve(main["W"]).X), abs=1e-6)
     assert ev.rounding_view(ev.main_view(ev.Settings(n=30)), 3)["exact"] is None
 
@@ -225,12 +225,12 @@ def test_the_kernel_is_byte_identical_in_the_series():
 
 
 def test_rank_two_on_the_default_seed_is_near_the_optimum_without_a_certificate():
-    """README: Rang 2, Seed 3: Wert 40,4390 (3·10⁻⁴ unter dem Optimum), kleinster Eigenwert um −6·10⁻³, kein Zertifikat; das Verdikt ist eine Warnung."""
+    """README: Rang 2, Seed 3: Wert 40,4390 (3,5·10⁻⁴ unter dem Optimum, ein Fixpunkt), kleinster Eigenwert um −6·10⁻³, kein Zertifikat; das Verdikt ist eine Warnung (bis auf die Schwelle am Optimalwert)."""
     s = ev.Settings(rank=2)
     m = ev.main_view(s)
     assert m["value"] == pytest.approx(40.4390, abs=5e-4) and 1e-5 < m["gap"] < 2e-3 and m["global"] and not m["certified"] and -2e-2 < m["lam_min"] < -1e-3
     kind, text = ev.verdict_main(s, m)
-    assert kind == "warning" and "**nein**" in text and "erreicht" in text
+    assert kind == "warning" and "**nein**" in text and "bis auf die Schwelle am Optimalwert" in text
 
 
 def test_the_certificate_threshold_follows_the_tolerance():
@@ -251,7 +251,7 @@ def test_the_certificate_threshold_follows_the_tolerance():
 
 
 def test_a_large_graph_ends_within_the_relative_gap_but_beyond_the_fixed_one():
-    """README: n = 320, Rang 8, Seed 3: der Abstand zum Referenzwert ist rund 0,03 (relativ 3·10⁻⁶): größer als die feste Schwelle 5·10⁻³, aber ein Rest des Schwanzes, keine Falle."""
+    """README: n = 320, Rang 8, Seed 3: der Abstand zum Referenzwert ist rund 0,03 (relativ 3·10⁻⁶): größer als die feste Schwelle 5·10⁻³, aber ein Fixpunkt unter dem Optimum (eine Falle bei zu kleinem Rang), den die relative Schwelle als Optimum zählt."""
     m = ev.main_view(ev.Settings(n=320, rank=8))
     assert m["gap"] > 5e-3 and m["gap"] / m["ref"]["value"] < 1e-5 and m["global"]
 

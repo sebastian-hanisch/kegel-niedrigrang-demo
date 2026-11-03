@@ -232,10 +232,10 @@ def verdict_main(s: Settings, m: dict) -> tuple:
     head = (f"{graph_name(s)} (Seed {s.seed}, {m['edges']} Kanten), Rang p = {m['rank']}: der Lauf endet nach {m['sweeps']} Sweeps bei **{num(m['value'])}**; der zertifizierte Referenzwert (Rang {ref['p']}) ist "
             f"**{num(ref['value'])}**" + ("" if ref["certified"] else " (ohne Zertifikat: der beste von drei Läufen)") + ". ")
     if m["global"]:
-        tail = f"Der Lauf hat den Optimalwert erreicht (Abstand {sci(max(m['gap'], 0.0))}). "
+        tail = f"Der Lauf liegt bis auf die Schwelle am Optimalwert (Abstand {sci(max(m['gap'], 0.0))}). "
     else:
         tail = f"Der Lauf endet {de(m['gap'], 4)} **unter dem Optimum**: eine Falle, ein für diesen Graphen zu kleiner Rang oder (bei grober Toleranz) noch nicht konvergiert. "
-    cert = (f"Zertifikat aus V: kleinster Eigenwert von Z(V) {sci(m['lam_min'])}, " + ("**ja**, V Vᵀ ist global optimal" if m["certified"] else "**nein** (Falle, Sattel oder zu grobe Toleranz)") + ".")
+    cert = (f"Zertifikat aus V: kleinster Eigenwert von Z(V) {sci(m['lam_min'])}, " + ("**ja**, V Vᵀ ist numerisch zertifiziert optimal (höchstens n·|λ_min|/2 unter dem Optimum)" if m["certified"] else "**nein** (Falle, Sattel, ein Fixpunkt knapp unter dem Optimum oder zu grobe Toleranz)") + ".")
     ok = m["global"] and m["certified"]
     kind = "success" if ok else ("warning" if m["certified"] != m["global"] else "info")
     return kind, head + tail + cert
@@ -253,16 +253,16 @@ def verdict_small(c: dict, rank: int) -> tuple:
 def verdict_scan(sc: dict, s: Settings) -> tuple:
     rates = ", ".join(f"p = {p}: {de(100.0 * sc['rate'][p], 0)} %" for p in sc["ranks"])
     sm = sc["smallest"]
-    text = (f"{sc['graphs']} Zufallsgraphen G({sc['n']}, {p_text(s.p)}) mit je {sc['starts']} Zufallsstarts je Rang, Anteil der Läufe, die den zertifizierten Optimalwert erreichen: {rates}. "
+    text = (f"{sc['graphs']} Zufallsgraphen G({sc['n']}, {p_text(s.p)}) mit je {sc['starts']} Zufallsstarts je Rang, Anteil der Läufe, die bis auf die Schwelle am zertifizierten Optimalwert liegen: {rates}. "
             + (f"Ab Rang **{sm}** gelingen mindestens 95 % der Läufe" if sm is not None else f"Bis Rang {sc['ranks'][-1]} erreicht kein Rang 95 %")
-            + f"; die Theorie fordert für fast alle Graphen p(p+1)/2 > n, also p ≥ {sc['theory_rank']} (√(2n) = {de(sc['sqrt_rank'], 1)}). Das ist eine Messung an Zufallsgraphen, keine Garantie: unterhalb der Theorie-Schwelle gibt es Fälle mit Fallen.")
+            + f"; die Theorie fordert für fast alle Kostenmatrizen p(p+1)/2 > n, also p ≥ {sc['theory_rank']} (√(2n) = {de(sc['sqrt_rank'], 1)}; Zufallsgraphen mit Gewicht 1 fallen nicht unter diese Aussage). Das ist eine Messung an Zufallsgraphen, keine Garantie: unterhalb der Theorie-Schwelle gibt es Fälle mit Fallen.")
     return "info", text
 
 
 def verdict_certificate(t: dict, s: Settings) -> tuple:
-    text = (f"{t['total']} Läufe: Zertifikat ja und Optimum erreicht {t['yes_global']}, Zertifikat ja aber Falle **{t['yes_trap']}** (dürfte nie vorkommen), Zertifikat nein und Optimum erreicht {t['no_global']} "
-            f"(Toleranz {tol_text(s.tol)}: der Lauf endete zu grob für die Schwelle), Zertifikat nein und Falle {t['no_trap']}. Kleinster Eigenwert von Z(V) bei Optima {sci(t['lam_global_min'])}, größter bei Fallen "
-            f"{sci(t['lam_trap_max'])}: die beiden Gruppen liegen weit auseinander.")
+    text = (f"{t['total']} Läufe: Zertifikat ja und Optimum erreicht {t['yes_global']}, Zertifikat ja aber Falle **{t['yes_trap']}** (in dieser Stichprobe; bei grober Toleranz und dünnen größeren Graphen kann es vorkommen), Zertifikat nein und Optimum erreicht {t['no_global']} "
+            f"(Toleranz {tol_text(s.tol)}: meist ein Fixpunkt knapp unter dem Optimum, selten ein Lauf knapp an der Schwelle), Zertifikat nein und Falle {t['no_trap']}. Kleinster Eigenwert von Z(V) bei Optima {sci(t['lam_global_min'])}, größter bei Fallen "
+            f"{sci(t['lam_trap_max'])}: in dieser Stichprobe liegen die beiden Gruppen weit auseinander.")
     return ("success" if t["yes_trap"] == 0 and t["lam_global_min"] > t["lam_trap_max"] else "warning"), text
 
 
@@ -293,5 +293,5 @@ def verdict_memory(mem: list, rew: list) -> tuple:
     n_text = f"{big['n']:,}".replace(",", ".")
     text = (f"Bei n = {n_text} Knoten braucht X {K.human_bytes(big['x_bytes'])}, der Faktor V mit p = {big['p']} nur {K.human_bytes(big['v_bytes'])} (reine Arithmetik, 8 Byte je Zahl). "
             + (f"Das Zertifikat von Rakoto Endor und Waldspurger fordert an {len(rew)} bipartiten Graphen p > λₙ/λ₂ = {de(min(r['kappa'] for r in rew), 1)} bis {de(max(r['kappa'] for r in rew), 1)}, "
-               f"also p ≥ {min(r['p_cert'] for r in rew)} bis {max(r['p_cert'] for r in rew)}; gebraucht haben die Läufe p = {min(r['p_found'] for r in rew if r['p_found'])} bis {max(r['p_found'] for r in rew if r['p_found'])}: hinreichend, aber vorsichtig." if rew else ""))
+               f"also p ≥ {min(r['p_cert'] for r in rew)} bis {max(r['p_cert'] for r in rew)}; gebraucht haben die Läufe p = {min(r['p_found'] for r in rew if r['p_found'])} bis {max(r['p_found'] for r in rew if r['p_found'])}: hinreichend, aber vorsichtig (die Zahl gebraucht hängt am Zufall der Starts)." if rew else ""))
     return "info", text

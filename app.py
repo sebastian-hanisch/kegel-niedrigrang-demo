@@ -107,8 +107,8 @@ with st.expander("So funktioniert es", expanded=True):
 1. **Die Aufgabe:** dieselbe wie in Stück 12: `max Σ wᵢⱼ (1 − Xᵢⱼ)/2` mit `X ⪰ 0`, `Xᵢᵢ = 1` für einen Zufallsgraphen `G(n, p)`.
 2. **Die Faktorisierung:** `X = V Vᵀ`, die Zeilen `vᵢ` von `V` liegen auf der Einheitssphäre im `ℝᵖ`. Bei `p = 1` sind das Vorzeichen `±1` (ein Schnitt), bei `p = 2` Punkte auf einem Kreis, bei `p = 3` auf einer Kugel.
 3. **Der Löser:** Blockkoordinatenabstieg („mixing method“): eine Zeile nach der anderen wird auf `vᵢ = −gᵢ/‖gᵢ‖` mit `gᵢ = Σⱼ wᵢⱼ vⱼ` gesetzt, das ist die exakte Minimierung über `vᵢ`. Keine Schrittweite, keine freien Parameter.
-4. **Das Zertifikat:** am Fixpunkt ist `Z(V) = Diag(‖gᵢ‖/2) + W/2` die Dualmatrix aus Stück 12. Ist sie positiv semidefinit, ist `V Vᵀ` **global optimal**: ein Beweis aus `V` allein. Ist sie es nicht, zeigt ein Eigenvektor eine Abstiegsrichtung.
-5. **Der Referenzwert:** ein Lauf mit größerem Rang (`p(p+1)/2 > n`, für fast alle Graphen reicht das), dessen Zertifikat gilt, liefert den Optimalwert **ohne SDP-Löser**.
+4. **Das Zertifikat:** am Fixpunkt ist `Z(V) = Diag(‖gᵢ‖/2) + W/2` die Dualmatrix aus Stück 12. Ist sie positiv semidefinit, ist `V Vᵀ` am exakten Fixpunkt **global optimal**: ein Beweis aus `V` allein. Im Lauf ist das numerisch zertifiziert: der Wert liegt höchstens `n·|λ_min|/2` unter dem Optimum. Ist `Z(V)` nicht positiv semidefinit, zeigt ein Eigenvektor eine Abstiegsrichtung.
+5. **Der Referenzwert:** ein Lauf mit größerem Rang (`p(p+1)/2 > n`, für fast alle Kostenmatrizen reicht das), dessen Zertifikat gilt, liefert einen numerisch zertifizierten Optimalwert **ohne SDP-Löser**.
         """
     )
 
@@ -144,9 +144,9 @@ st.markdown("## 🎯 Ergebnis")
 m1, m2, m3 = st.columns(3)
 m4, m5 = st.columns(2)
 m1.metric("Wert des Laufs", num(main["value"]), help="Wert der Relaxation bei X = V Vᵀ nach dem Abbruch.")
-m2.metric("Referenzwert", num(ref["value"]), help=f"Ein Lauf mit Rang {ref['p']} (p(p+1)/2 > n) mit Zertifikat: der bewiesene Optimalwert der Relaxation." if ref["certified"] else f"Ein Lauf mit Rang {ref['p']}, ohne Zertifikat (bester von drei).")
+m2.metric("Referenzwert", num(ref["value"]), help=f"Ein Lauf mit Rang {ref['p']} (p(p+1)/2 > n) mit Zertifikat: der numerisch zertifizierte Optimalwert der Relaxation." if ref["certified"] else f"Ein Lauf mit Rang {ref['p']}, ohne Zertifikat (bester von drei).")
 m3.metric("Abstand", sci(max(main["gap"], 0.0)), help="Referenzwert minus Wert des Laufs.")
-m4.metric("Zertifikat", "ja" if main["certified"] else "nein", help="Ist Z(V) positiv semidefinit (Schwelle 10·√Toleranz), ist V Vᵀ global optimal.")
+m4.metric("Zertifikat", "ja" if main["certified"] else "nein", help="Ist Z(V) positiv semidefinit (Schwelle 10·√Toleranz), ist V Vᵀ numerisch zertifiziert optimal: der Wert liegt höchstens n·|λ_min|/2 unter dem Optimum.")
 m5.metric("Sweeps", str(main["sweeps"]), help=f"Zeit {ms(main['seconds'])} (hängt vom Rechner ab).")
 st.plotly_chart(build_convergence(main["history"], ref["value"], f"{graph_name(settings)}, Rang {main['rank']}: Abstand zum Referenzwert"), width="stretch", key="main_chart")
 st.caption("Der Abstand des Werts zum zertifizierten Referenzwert nach jedem Sweep (logarithmisch): lineare Konvergenz (jede weitere Stelle kostet etwa gleich viele Sweeps); endet der Lauf in einer Falle, bleibt der Abstand stehen.")
@@ -182,7 +182,7 @@ st.markdown("---")
 
 st.subheader("🔬 Experiment 2: Wie klein darf der Rang sein?")
 scan = _scan(settings.n, settings.p, settings.seed, settings.tol)
-st.caption(f"{scan['graphs']} Zufallsgraphen G({scan['n']}, {p_text(settings.p)}), je Rang {scan['starts']} Zufallsstarts: Anteil der Läufe, die den zertifizierten Optimalwert erreichen, und Anteil mit Zertifikat. Die gestrichelte Linie ist der Rang, den die Theorie für fast alle Graphen fordert.")
+st.caption(f"{scan['graphs']} Zufallsgraphen G({scan['n']}, {p_text(settings.p)}), je Rang {scan['starts']} Zufallsstarts: Anteil der Läufe, die den zertifizierten Optimalwert erreichen, und Anteil mit Zertifikat. Die gestrichelte Linie ist der Rang, den die Theorie für fast alle Kostenmatrizen fordert (Zufallsgraphen mit Gewicht 1 fallen nicht unter diese Aussage).")
 st.plotly_chart(build_rate(scan), width="stretch", key="rate_chart")
 verdict(verdict_scan(scan, settings))
 
@@ -190,7 +190,7 @@ st.markdown("---")
 
 st.subheader("🔬 Experiment 3: Das Zertifikat trennt Optima und Fallen")
 table = certificate_table(scan)
-st.caption("Dieselben Läufe: der kleinste Eigenwert von `Z(V)` je Lauf (logarithmisch, positiv aufgetragen als −λ). Optima liegen nahe null, Fallen weit darüber; die Schwelle liegt dazwischen und hängt an der Toleranz.")
+st.caption("Dieselben Läufe: der kleinste Eigenwert von `Z(V)` je Lauf (logarithmisch, positiv aufgetragen als −λ). In dieser Stichprobe liegen Optima nahe null, Fallen weit darüber; die Schwelle liegt dazwischen und hängt an der Toleranz.")
 c3, c4 = st.columns(2)
 with c3:
     st.plotly_chart(build_lambda(scan, settings.tol), width="stretch", key="lambda_chart")
@@ -251,12 +251,12 @@ st.markdown(
     """
 | Annahme | Was passiert, wenn sie verletzt ist | Wer setzt an |
 |---|---|---|
-| **Ein kleiner Rang genügt** | Gemessen an Zufallsgraphen genügt ein Rang weit unter `√(2n)` (Experiment 2). Die Theorie von Boumal, Voroninski und Bandeira gilt für *fast alle* Kostenmatrizen; unterhalb ihrer Schwelle gibt es nach Rakoto Endor und Waldspurger (Zitat) Kostenmatrizen positiven Maßes mit nichtoptimalen kritischen Punkten. Der Graph Petersen braucht Rang 4: mit Rang 3 endet jeder Lauf unter der Schranke (Experiment 1, nur Rang 1 bis 3 wählbar). | – |
-| **Das Zertifikat beweist Optimalität** | Es gilt für einen Fixpunkt: ist `Z(V)` positiv semidefinit, ist `V Vᵀ` global optimal. Bei einem noch nicht konvergierten Lauf ist `λ_min` leicht negativ; die Schwelle `10·√Toleranz` ist gemessen (Gewicht 1, `n` = 20 und 30), bei Toleranz 10⁻⁴ und gröber trennt sie nicht mehr. Das Zertifikat braucht eine Eigenwertrechnung der `n×n`-Matrix `Z(V)`: der Speichergewinn gilt für den Lauf, nicht für die Prüfung (matrixfreie Eigenwertsuche wäre ein eigener Baustein, hier nicht gebaut). | – |
+| **Ein kleiner Rang genügt** | Gemessen an Zufallsgraphen genügt ein Rang unter `√(2n)` (Experiment 2; bei `n` = 10 nur knapp, bei 20 und 30 etwa die Hälfte). Die Theorie von Boumal, Voroninski und Bandeira gilt für *fast alle* Kostenmatrizen (Graphen mit Gewicht 1 sind eine Nullmenge, über die sie nichts sagt); unterhalb ihrer Schwelle gibt es nach Rakoto Endor und Waldspurger (Zitat) Kostenmatrizen positiven Maßes mit nichtoptimalen kritischen Punkten. Der Graph Petersen braucht Rang 4: mit Rang 3 endet jeder Lauf unter der Schranke (Experiment 1, nur Rang 1 bis 3 wählbar). | – |
+| **Das Zertifikat beweist Optimalität** | Es gilt für einen Fixpunkt: ist `Z(V)` positiv semidefinit, ist `V Vᵀ` global optimal. Bei einem noch nicht konvergierten Lauf ist `λ_min` leicht negativ; der Wert liegt dann höchstens `n·(−λ_min)/2` unter dem Optimum, und bei grober Toleranz (10⁻⁶) und dünnen größeren Graphen kann das Zertifikat auch Läufen „ja“ geben, die noch ein Stück darunter liegen. Die Schwelle `10·√Toleranz` ist gemessen (Gewicht 1, `n` = 20 und 30), bei Toleranz 10⁻⁴ und gröber trennt sie nicht mehr. Das Zertifikat braucht eine Eigenwertrechnung der `n×n`-Matrix `Z(V)`: der Speichergewinn gilt für den Lauf, nicht für die Prüfung (matrixfreie Eigenwertsuche wäre ein eigener Baustein, hier nicht gebaut). | – |
 | **Der Blockkoordinatenabstieg endet im Optimum, wenn es eines gibt** | Er endet an Fixpunkten; ein Sattel ist ein Fixpunkt, den das Zertifikat verneint. Die Demo sagt deshalb „Falle oder Sattel“ und prüft keine Hesse-Matrix. | – |
 | **Burer–Monteiro ist schneller** | Für diese Messung (Python, MaxCut-Typ, Zeitreihe in Experiment 4): ja, mit großem Abstand bei großen `n`, und die Zeit hängt an der Toleranz (lineare Konvergenz: jede weitere Stelle kostet weitere Sweeps). Mit kompilierten Kernen und einer anderen Genauigkeit wäre der Faktor ein anderer; Zeiten hängen vom Rechner ab und werden nicht getestet. | – |
 | **Alle SDPs sind so einfach wie MaxCut** | Hier stehen nur Diagonalbedingungen `Xᵢᵢ = 1`: jede Zeile von `V` bekommt eine geschlossene Aktualisierung. Allgemeine SDPs mit `m` Gleichungen brauchen das Originalverfahren (Augmented Lagrangian, Burer und Monteiro 2003) oder Riemannsche Verfahren; nicht gebaut. | – |
-| **Das Zertifikat vor dem Lauf** | Der Satz von Rakoto Endor und Waldspurger fordert eine Rang-1-Lösung `x xᵀ` (hier: bipartite, zusammenhängende Graphen) und `p > λₙ/λ₂`. Er ist hinreichend und in dieser Messung um ein Vielfaches zu vorsichtig; seine Schärfe (die konstruierten Gegenbeispiele der Arbeit) wurde nicht nachgebaut. | – |
+| **Das Zertifikat vor dem Lauf** | Der Satz von Rakoto Endor und Waldspurger fordert eine Rang-1-Lösung `x xᵀ` (hier: bipartite, zusammenhängende Graphen) und `p > λₙ/λ₂`. Er ist hinreichend (so die Arbeit) und in dieser Messung um ein Vielfaches vorsichtig (Rang 2 genügte in allen Starts, Rang 1 je nach Graph in 67 bis 100 %); seine Schärfe (die konstruierten Gegenbeispiele der Arbeit) wurde nicht nachgebaut. | – |
 | **Frank–Wolfe mit Skizze** | Nur als Abschnitt mit Zitaten; kein Code, keine Messung. | – |
 """
 )
