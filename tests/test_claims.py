@@ -103,8 +103,8 @@ def test_petersen_needs_rank_four():
 
 
 def test_the_rank_scan_on_the_default_graph(scan):
-    """README: 3 Graphen G(20, 0,3), je Rang 8 Starts: Rang 1 nie, Rang 2 um 30 %, ab Rang 3 mindestens 95 %; Zertifikat dort fast immer; kleinster Rang mit 95 % ist 3 (Band 3 bis 4); die Theorie fordert p ≥ 6."""
-    assert scan["n"] == 20 and scan["graphs"] == 3 and scan["starts"] == 8 and scan["rate"][1] == 0.0 and 0.05 <= scan["rate"][2] <= 0.6 and scan["rate"][3] >= 0.95 and scan["smallest"] in (3, 4)
+    """README: 3 Graphen G(20, 0,3), je Rang 8 Starts: Rang 1 und 2 nie (Rang 2 endet an Fixpunkten unter dem Optimum), ab Rang 3 mindestens 95 % (gemessen alle 24); Zertifikat dort fast immer; kleinster Rang mit 95 % ist 3 (Band 3 bis 4); die Theorie fordert p ≥ 6."""
+    assert scan["n"] == 20 and scan["graphs"] == 3 and scan["starts"] == 8 and scan["rate"][1] == 0.0 and scan["rate"][2] <= 0.25 and scan["rate"][3] >= 0.95 and scan["smallest"] in (3, 4)
     assert scan["theory_rank"] == 6 and all(scan["cert_rate"][p] <= scan["rate"][p] + 1e-12 for p in scan["ranks"]) and scan["cert_rate"][6] >= 0.9 and scan["refs_certified"] == 3
     assert len(scan["runs"]) == 3 * 6 * 8
 
@@ -117,15 +117,15 @@ def test_the_smallest_rank_grows_slowly_with_n():
 
 
 def test_the_certificate_separates_optima_and_traps(scan):
-    """README: 144 Läufe; Zertifikat ja und Falle: 0 (nie); die kleinsten Eigenwerte der Optima und die größten der Fallen liegen getrennt (−6·10⁻³ gegen −4·10⁻²: Band)."""
+    """README: 144 Läufe; Zertifikat ja und Falle: 0 (nie); Zertifikat nein und Optimum: wenige Läufe knapp an der Zertifikat-Schwelle; die kleinsten Eigenwerte der Optima und die größten der Fallen liegen getrennt (−1·10⁻³ gegen −6·10⁻³: Band)."""
     t = ev.certificate_table(scan)
     assert t["total"] == 144 and t["yes_global"] + t["yes_trap"] + t["no_global"] + t["no_trap"] == 144 and t["yes_trap"] == 0
-    assert t["yes_global"] >= 60 and t["no_trap"] >= 20 and t["lam_global_min"] > t["lam_trap_max"] and t["lam_trap_max"] < -0.01 and t["lam_global_min"] > -0.02
+    assert t["yes_global"] >= 60 and t["no_trap"] >= 20 and t["no_global"] <= 6 and t["lam_global_min"] > t["lam_trap_max"] and -2e-2 < t["lam_trap_max"] < -3e-3 and t["lam_global_min"] > -3e-3
     assert ev.verdict_certificate(t, S0)[0] == "success"
 
 
 def test_a_trap_has_a_strongly_negative_eigenvalue_over_many_graphs():
-    """README: Fallen haben λ_min(Z(V)) < −0,03 (n = 20 und 30, Toleranz ≤ 10⁻⁶), Optima ≥ −4·10⁻³ bei Toleranz 10⁻⁸ (hier Toleranz 10⁻¹⁰: ≥ −10⁻³)."""
+    """README: Fallen haben meist λ_min(Z(V)) < −0,03 (hier Stichprobe n = 20 und 30, Rang 1 bis 4, Toleranz 10⁻¹⁰; die schwächste Falle der Demo, der Rang-2-Fixpunkt auf Seed 3, liegt bei −6·10⁻³), Optima ≥ −4·10⁻³ bei Toleranz 10⁻⁸ (hier Toleranz 10⁻¹⁰: ≥ −10⁻³)."""
     rng = np.random.default_rng(3)
     glob, trap = [], []
     for n, pe in ((20, 0.5), (30, 0.3)):
@@ -136,7 +136,7 @@ def test_a_trap_has_a_strongly_negative_eigenvalue_over_many_graphs():
                 for _ in range(4):
                     r = B.mixing(W, p, rng, tol=1e-10)
                     lam = B.certificate(W, r.V)["lam_min"]
-                    (glob if ref - r.value <= B.global_gap(ref) else trap).append(lam)
+                    (glob if B.reached_optimum(r, ref, 1e-10) else trap).append(lam)
     assert min(glob) > -1e-3 and max(trap) < -0.03 and len(glob) > 10 and len(trap) > 10
 
 
@@ -169,11 +169,11 @@ def test_the_tolerance_decides_the_time():
 
 
 def test_the_rounding_acts_on_v_alone(main):
-    """README / App: Rang-7-Faktor des Standardgraphen: SDP-Wert 40,4393, erwarteter Schnitt 37,6011, Mittel von 2 000 Hyperebenen innerhalb von 4 Standardfehlern, bester Schnitt = exakter Schnitt 39."""
+    """README / App: Rang-7-Faktor des Standardgraphen (Referenz bei 10⁻¹⁴ poliert): SDP-Wert 40,4393, erwarteter Schnitt 37,6025, Mittel von 2 000 Hyperebenen innerhalb von 4 Standardfehlern, bester Schnitt = exakter Schnitt 39."""
     r = ev.rounding_view(main, S0.seed)
-    assert r["value"] == pytest.approx(40.4393, abs=5e-4) and r["expected"] == pytest.approx(37.6011, abs=1e-3) and abs(r["mean"] - r["expected"]) < 4 * r["stderr"] and r["best"] == 39.0 and r["exact"] == 39.0 and r["p"] == 7 and r["n"] == 20
-    assert r["expected"] >= R.ALPHA_GW * r["value"] - 1e-6 and r["expected"] == pytest.approx(R.expected_rounding(main["W"], S.solve(main["W"]).X), abs=0.05)   # README: der erwartete Schnitt hängt vom Punkt X ab, nicht vom Zielwert (37,6011 aus V bei Toleranz 1e-10 gegen 37,6025 aus dem Mittelpunkt des inneren Punkts)
-    assert r["expected"] != pytest.approx(R.expected_rounding(main["W"], S.solve(main["W"]).X), abs=1e-6)
+    assert r["value"] == pytest.approx(40.4393, abs=5e-4) and r["expected"] == pytest.approx(37.6025, abs=2e-4) and abs(r["mean"] - r["expected"]) < 4 * r["stderr"] and r["best"] == 39.0 and r["exact"] == 39.0 and r["p"] == 7 and r["n"] == 20
+    assert r["expected"] >= R.ALPHA_GW * r["value"] - 1e-6 and r["expected"] == pytest.approx(R.expected_rounding(main["W"], S.solve(main["W"]).X), abs=5e-4)   # README: der polierte Referenz-V und der Mittelpunkt des inneren Punkts geben denselben erwarteten Schnitt (37,6025)
+    assert r["expected"] != pytest.approx(37.6011, abs=5e-4)                                                  # der bei Toleranz 10⁻¹⁰ beendete Lauf gab 37,6011: ein Artefakt der Referenztoleranz
     assert ev.rounding_view(ev.main_view(ev.Settings(n=30)), 3)["exact"] is None
 
 
@@ -225,12 +225,16 @@ def test_the_kernel_is_byte_identical_in_the_series():
 
 
 def test_rank_two_on_the_default_seed_is_near_the_optimum_without_a_certificate():
-    """README: Rang 2, Seed 3: Wert 40,4390 (3,5·10⁻⁴ unter dem Optimum, ein Fixpunkt), kleinster Eigenwert um −6·10⁻³, kein Zertifikat; das Verdikt ist eine Warnung (bis auf die Schwelle am Optimalwert)."""
+    """README: Rang 2, Seed 3: Wert 40,4390 (3,5·10⁻⁴ unter dem Optimum, ein Fixpunkt), kleinster Eigenwert um −6·10⁻³, kein Zertifikat, **nicht** „Optimum erreicht“ (erlaubt wären 4·10⁻⁵); das Verdikt nennt ihn unter dem Optimum."""
     s = ev.Settings(rank=2)
     m = ev.main_view(s)
-    assert m["value"] == pytest.approx(40.4390, abs=5e-4) and 1e-5 < m["gap"] < 2e-3 and m["global"] and not m["certified"] and -2e-2 < m["lam_min"] < -1e-3
+    assert m["value"] == pytest.approx(40.4390, abs=5e-4) and m["gap"] == pytest.approx(3.49e-4, abs=2e-5) and m["allowance"] == pytest.approx(4.07e-5, abs=5e-6) and not m["global"] and not m["certified"] and -2e-2 < m["lam_min"] < -1e-3
     kind, text = ev.verdict_main(s, m)
-    assert kind == "warning" and "**nein**" in text and "bis auf die Schwelle am Optimalwert" in text
+    assert kind == "info" and "**nein**" in text and "**unter dem Optimum**" in text and "3,5·10⁻⁴" in text and "Fixpunkt knapp darunter" in text
+    for tol in (1e-10, 1e-12):                                                                                 # mit engerer Toleranz bleibt der Abstand
+        m2 = ev.main_view(ev.Settings(rank=2, tol=tol))
+        assert m2["gap"] == pytest.approx(3.49e-4, abs=2e-5) and not m2["global"] and not m2["certified"]
+    assert ev.main_view(ev.Settings(rank=3))["global"]
 
 
 def test_the_certificate_threshold_follows_the_tolerance():
@@ -245,15 +249,16 @@ def test_the_certificate_threshold_follows_the_tolerance():
             for _ in range(4):
                 r = B.mixing(W, p, rng, tol=tol)
                 lam = B.certificate(W, r.V)["lam_min"]
-                (lams if ref - r.value <= B.global_gap(ref) else traps).append(lam)
+                (lams if B.reached_optimum(r, ref, tol) else traps).append(lam)
         assert lams and min(lams) >= -B.cert_threshold(tol) * 1.5, tol
         assert all(l < -0.03 for l in traps) and traps
 
 
-def test_a_large_graph_ends_within_the_relative_gap_but_beyond_the_fixed_one():
-    """README: n = 320, Rang 8, Seed 3: der Abstand zum Referenzwert ist rund 0,03 (relativ 3·10⁻⁶): größer als die feste Schwelle 5·10⁻³, aber ein Fixpunkt unter dem Optimum (eine Falle bei zu kleinem Rang), den die relative Schwelle als Optimum zählt."""
+def test_a_large_graph_with_too_small_a_rank_is_a_trap():
+    """README: n = 320, Rang 8, Seed 3: der Abstand zum Referenzwert ist rund 0,03 (relativ 3·10⁻⁶), erlaubt sind rund 0,01: ein Fixpunkt unter dem Optimum (eine Falle bei zu kleinem Rang, λ_min −3,5·10⁻²) ist **kein** Optimum; Rang 12 erreicht es."""
     m = ev.main_view(ev.Settings(n=320, rank=8))
-    assert m["gap"] > 5e-3 and m["gap"] / m["ref"]["value"] < 1e-5 and m["global"]
+    assert 0.025 < m["gap"] < 0.035 and m["gap"] / m["ref"]["value"] < 1e-5 and m["gap"] > 2.5 * m["allowance"] and not m["global"] and not m["certified"] and m["lam_min"] < -0.03
+    assert ev.main_view(ev.Settings(n=320, rank=12))["global"]
 
 
 def test_the_time_series_favours_burer_monteiro_already_at_small_n():
@@ -264,7 +269,7 @@ def test_the_time_series_favours_burer_monteiro_already_at_small_n():
 
 def test_more_readme_numbers_of_the_rounding_and_the_large_graph(main):
     r = ev.rounding_view(main, S0.seed)
-    assert r["mean"] == pytest.approx(37.6095, abs=0.03) and r["stderr"] == pytest.approx(0.0337, abs=0.005)
+    assert r["mean"] == pytest.approx(37.614, abs=0.03) and r["stderr"] == pytest.approx(0.0336, abs=0.005)
     m = ev.main_view(ev.Settings(**C.PRESETS["Großer Graph (n = 160)"]))
     assert -1e-3 < m["lam_min"] < 0.0 and m["sweeps"] < 400
 

@@ -96,7 +96,7 @@ def certificate(W: np.ndarray, V: np.ndarray) -> dict:
 
 def cert_threshold(tol: float) -> float:
     """Schwelle für „Zertifikat ja“: λ_min(Z) ≥ −10·√tol. Ein global optimaler, aber bei Toleranz tol beendeter Lauf hat λ_min bis etwa −3,8·√tol (obere Hüllkurve der Messung, Gewicht 1, n = 20 und 30; typisch deutlich weniger);
-    in den 144 Läufen von G(20; 0,3) lagen die Fallen bei λ_min ≤ −3,8·10⁻², die Optima bei ≥ −6,2·10⁻³. Bei tol ≥ 10⁻⁴ ist die Schwelle wertlos (Fallen und ungenaue Läufe überlappen): die App bietet nur tol ≤ 10⁻⁶ an."""
+    in den 144 Läufen von G(20; 0,3) lagen die Optima bei λ_min ≥ −1,1·10⁻³, die Fallen bei ≤ −6,1·10⁻³ (die schwächste ist der Rang-2-Fixpunkt auf Seed 3, die meisten liegen bei ≤ −3,8·10⁻²). Bei tol ≥ 10⁻⁴ ist die Schwelle wertlos (Fallen und ungenaue Läufe überlappen): die App bietet nur tol ≤ 10⁻⁶ an."""
     return 10.0 * tol ** 0.5
 
 
@@ -104,10 +104,34 @@ def is_certified(cert: dict, tol: float) -> bool:
     return cert["lam_min"] >= -cert_threshold(tol)
 
 
-def global_gap(value: float) -> float:
-    """Wie weit unter dem zertifizierten Referenzwert ein Lauf noch als „Optimum erreicht“ zählt: max(5·10⁻³, 2·10⁻⁵·Wert). Messung (n = 20 und 30, Gewicht 1, tol ≤ 10⁻⁶): Läufe im Optimum liegen ≤ 1,5·10⁻³ darunter,
-    Fallen ≥ 3·10⁻² darunter; der relative Teil gilt für große Werte. Er zählt aber auch eine echte Falle als Optimum: n = 320, Rang 8, Seed 3 endet an einem Fixpunkt 0,029 unter dem Optimum (relativ 3·10⁻⁶)."""
-    return max(5e-3, 2e-5 * abs(value))
+GAP_FACTOR = 100.0       # erlaubter Überschuss in Einheiten Toleranz · max(1, |Wert|), siehe gap_allowance
+RHO_MAX = 0.999          # Deckel für die geschätzte Konvergenzrate des Restabstiegs
+
+
+def tail_estimate(history) -> float:
+    """Was ein bei Toleranz tol beendeter Lauf noch gewinnen würde: geometrische Reihe aus den letzten beiden Sweeps, d_letzt · ρ/(1 − ρ) mit ρ = d_letzt/d_vorletzt (ρ höchstens RHO_MAX).
+    Ohne zwei positive Zuwächse (ein Sweep, Wert ändert sich nicht mehr) ist der Rest 0. Ein Fixpunkt hat keinen Rest, ein langsam konvergierender Lauf einen großen."""
+    d = np.diff(np.asarray(history, float))
+    if len(d) < 2 or d[-1] <= 0.0 or d[-2] <= 0.0:
+        return 0.0
+    rho = min(float(d[-1] / d[-2]), RHO_MAX)
+    return float(d[-1]) * rho / (1.0 - rho)
+
+
+def gap_allowance(run: BmResult, tol: float) -> float:
+    """Wie weit unter dem zertifizierten Referenzwert ein Lauf noch als „Optimum erreicht“ zählt: der geschätzte Rest seines Abstiegs plus GAP_FACTOR · tol · max(1, |Wert|).
+    Messung: 2 786 Läufe auf G(n, p) mit Gewicht 1 (n = 10 bis 320, p = 0,1 bis 0,5, Rang 1 bis 26, tol 10⁻⁶ bis 10⁻¹²); Wahrheit: der Lauf, bei 10⁻¹⁴ bis 8 000 Sweeps fortgesetzt, erreicht den Referenzwert oder bleibt darunter.
+    Der Überschuss (Abstand − Rest)/(tol · max(1, |Wert|)) ist bei tol 10⁻⁸ für 661 Läufe, die das Optimum erreichen, höchstens 37 (ohne einen auf einem Plateau stehengebliebenen Lauf), für 248 Läufe an einem Fixpunkt unter dem Optimum
+    mindestens 11, bis auf zwei weitere (41 und 63; alle Rang 6 bei n = 150) mindestens 133 (n = 320, Rang 8: 326; Rang 2, Seed 3: 863); bei 10⁻¹⁰ höchstens 0 gegen mindestens 3·10⁴, bei 10⁻¹² höchstens 0 gegen mindestens 8·10⁶.
+    GAP_FACTOR = 100 liegt zwischen 37 und 133. Bei tol = 10⁻⁶ überlappen die Gruppen (Optima bis 48, Fixpunkte ab 0,9): dort trennt das Kriterium nicht."""
+    return tail_estimate(run.history) + GAP_FACTOR * tol * max(1.0, abs(run.value))
+
+
+def reached_optimum(run: BmResult, ref_value: float, tol: float) -> bool:
+    """„Optimum erreicht“: der Lauf ist konvergiert und liegt höchstens gap_allowance unter dem zertifizierten Referenzwert. Ein Fixpunkt unter dem Optimum (Rang 2, Seed 3: 3,5·10⁻⁴; n = 320, Rang 8: 0,029)
+    hat keinen Rest und fällt durch. Gilt für tol ≤ 10⁻⁸; bei tol = 10⁻⁶ liegt ein Fixpunkt 3,5·10⁻⁴ unter dem Optimum noch innerhalb der Unschärfe eines grob beendeten Laufs (Rang 2, Seed 3: Überschuss 9, gute Läufe bis 48).
+    Fixpunkte, die weniger als rund 100 Toleranzen unter dem Optimum liegen, erkennt es auch bei 10⁻⁸ nicht (3 von 248 Fixpunkt-Läufen); dort entscheidet das Zertifikat."""
+    return bool(run.converged and ref_value - run.value <= gap_allowance(run, tol))
 
 
 def rank_for_theory(n: int) -> int:
@@ -123,8 +147,13 @@ def sqrt_rank(n: int) -> int:
     return int(np.ceil(np.sqrt(2.0 * n)))
 
 
+REF_POLISH_TOL = 1e-14
+
+
 def reference(W: np.ndarray, rng: np.random.Generator, tol: float = 1e-10, tries: int = 3) -> dict:
-    """Ein numerisch zertifiziert optimaler Wert ohne SDP-Löser: Läufe mit p = rank_for_theory(n) + 1 (Zufallsstarts), der erste mit Zertifikat zählt. Ohne Zertifikat: der beste Lauf, certified = False."""
+    """Ein numerisch zertifiziert optimaler Wert ohne SDP-Löser: Läufe mit p = rank_for_theory(n) + 1 (Zufallsstarts), der erste mit Zertifikat zählt. Ohne Zertifikat: der beste Lauf, certified = False.
+    Ein zertifizierter Lauf wird bei Toleranz REF_POLISH_TOL weitergeführt (ohne neuen Zufallsstart): bei tol = 10⁻¹⁰ liegt der Wert zwar auf 10⁻⁶ genau, der Punkt V aber nicht
+    (der erwartete Schnitt der Rundung hängt am Punkt: 37,6011 aus dem Lauf bei 10⁻¹⁰, 37,6025 aus dem polierten)."""
     n = len(W)
     p = min(n, rank_for_theory(n) + 1)
     best = None
@@ -135,5 +164,9 @@ def reference(W: np.ndarray, rng: np.random.Generator, tol: float = 1e-10, tries
         if best is None or r.value > best["value"]:
             best = {"value": r.value, "bound": c["bound"], "lam_min": c["lam_min"], "certified": ok, "p": p, "sweeps": r.sweeps, "V": r.V}
         if ok:
+            q = mixing(W, p, rng, tol=REF_POLISH_TOL, V0=r.V)
+            cq = certificate(W, q.V)
+            if q.value >= r.value and is_certified(cq, tol):
+                return {"value": q.value, "bound": cq["bound"], "lam_min": cq["lam_min"], "certified": True, "p": p, "sweeps": r.sweeps + q.sweeps, "V": q.V}
             return {"value": r.value, "bound": c["bound"], "lam_min": c["lam_min"], "certified": True, "p": p, "sweeps": r.sweeps, "V": r.V}
     return best

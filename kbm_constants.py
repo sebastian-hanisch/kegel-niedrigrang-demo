@@ -23,6 +23,8 @@ SPEED_NS = (10, 20, 40, 80, 160, 320)                     # Experiment 4
 ADMM_N_MAX = 80                                           # ADMM nur bis hierhin (Eigenzerlegung je Iteration, 4 s bei n = 80)
 PD_N_MAX = 30                                             # primal-dualer innerer Punkt (Stück 6) nur bis hierhin
 ADMM_TOL = 1e-7
+SMALL_TOL = 1e-10                                         # Toleranz der Läufe auf den kleinen Graphen (Experiment 1)
+REW_TOL = 1e-8                                            # Toleranz der Läufe auf den bipartiten Graphen (Zertifikat vor dem Lauf)
 HYPER_SAMPLES = 2000                                      # Hyperebenen in Experiment 5
 MEMORY_NS = (100, 1000, 10000, 100000)
 SEED_OFFSET = {"main": 1000, "reference": 2000, "small": 3000, "scan": 4000, "round": 5000, "rew": 6000}

@@ -10,7 +10,7 @@ S0 = ev.Settings()
 
 def _main(**kw):
     ref = {"value": 40.4393, "p": 7, "certified": True}
-    base = {"rank": 4, "value": 40.4393, "sweeps": 107, "gap": 1e-5, "global": True, "certified": True, "lam_min": -1.7e-5, "ref": ref, "edges": 51}
+    base = {"rank": 4, "value": 40.4393, "sweeps": 107, "gap": 1e-5, "allowance": 4.9e-5, "global": True, "certified": True, "lam_min": -1.7e-5, "ref": ref, "edges": 51}
     base.update(kw)
     return base
 
@@ -19,8 +19,20 @@ def test_main_verdict_kinds_follow_the_two_flags():
     assert ev.verdict_main(S0, _main())[0] == "success"
     kind, text = ev.verdict_main(S0, _main(**{"global": False, "certified": False, "gap": 0.5162, "value": 48.4133}))
     assert kind == "info" and "unter dem Optimum" in text and "0,5162" in text and "**nein**" in text
-    assert ev.verdict_main(S0, _main(certified=False))[0] == "warning"                         # bis auf die Schwelle am Optimum, aber kein Zertifikat (Fixpunkt knapp darunter oder zu grobe Toleranz)
+    assert ev.verdict_main(S0, _main(certified=False))[0] == "warning"                         # Optimum erreicht, aber kein Zertifikat (Lauf knapp an der Zertifikat-Schwelle oder zu grobe Toleranz)
     assert ev.verdict_main(S0, _main(**{"global": False}))[0] == "warning"                       # Zertifikat ja, aber unter dem Optimum: dürfte nie vorkommen
+
+
+def test_main_verdict_says_what_was_allowed():
+    """Optimum erreicht: Abstand und erlaubter Abstand stehen im Text; ein Fixpunkt 3,5·10⁻⁴ unter dem Optimum (erlaubt 4·10⁻⁵) heißt „unter dem Optimum“, mit dem Abstand in Zehnerpotenz-Schreibweise."""
+    kind, text = ev.verdict_main(S0, _main())
+    assert kind == "success" and "hat das Optimum erreicht (Abstand 1,0·10⁻⁵, erlaubt sind 4,9·10⁻⁵" in text and "plus 100·Toleranz·Wert" in text and "**unter dem Optimum**" not in text
+    kind2, text2 = ev.verdict_main(S0, _main(**{"global": False, "certified": False, "gap": 3.5e-4, "allowance": 4.1e-5, "value": 40.4390}))
+    assert kind2 == "info" and "endet 3,5·10⁻⁴ **unter dem Optimum** (erlaubt wären 4,1·10⁻⁵)" in text2 and "Fixpunkt knapp darunter" in text2 and "**nein**" in text2
+    text3 = ev.verdict_main(S0, _main(**{"global": False, "certified": False, "gap": 0.0295, "allowance": 0.0096, "value": 8833.75}))[1]
+    assert "endet 0,0295 **unter dem Optimum** (erlaubt wären 9,6·10⁻³)" in text3
+    kind4, text4 = ev.verdict_main(S0, _main(**{"global": False, "certified": False, "converged": False, "sweeps": 2000, "gap": 2e-3, "allowance": 4e-5}))
+    assert kind4 == "info" and "nicht konvergiert" in text4 and "2000 Sweeps" in text4 and "unter dem Optimum**" not in text4
 
 
 def test_main_verdict_names_the_reference_and_its_certificate():

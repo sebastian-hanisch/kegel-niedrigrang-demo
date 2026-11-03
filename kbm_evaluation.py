@@ -90,7 +90,7 @@ def main_view(s: Settings) -> dict:
     ref = B.reference(W, _rng(s.seed, "reference"))
     gap = ref["value"] - r.value
     return {"W": W, "rank": rank, "value": r.value, "sweeps": r.sweeps, "converged": r.converged, "seconds": r.seconds, "history": r.history, "V": r.V, "lam_min": cert["lam_min"], "bound": cert["bound"],
-            "certified": B.is_certified(cert, s.tol), "ref": ref, "gap": gap, "global": gap <= B.global_gap(ref["value"]), "edges": len(G.edges(W)), "total": G.total_weight(W),
+            "certified": B.is_certified(cert, s.tol), "ref": ref, "gap": gap, "allowance": B.gap_allowance(r, s.tol), "global": B.reached_optimum(r, ref["value"], s.tol), "edges": len(G.edges(W)), "total": G.total_weight(W),
             "theory_rank": B.rank_for_theory(s.n), "sqrt_rank": math.sqrt(2.0 * s.n)}
 
 
@@ -106,17 +106,17 @@ def small_view(graph: str, rank: int, seed: int) -> dict:
     n = len(W)
     with threadpool_limits(1):
         sdp = S.solve(W, 1e-9)
-    r = B.mixing(W, rank, _rng(seed, "small"), tol=1e-10)
+    r = B.mixing(W, rank, _rng(seed, "small"), tol=C.SMALL_TOL)
     cert = B.certificate(W, r.V)
     rng = _rng(seed + 1, "small")
     wins = 0
     for _ in range(20):
-        q = B.mixing(W, rank, rng, tol=1e-10)
-        wins += sdp.value - q.value <= B.global_gap(sdp.value)
+        q = B.mixing(W, rank, rng, tol=C.SMALL_TOL)
+        wins += B.reached_optimum(q, sdp.value, C.SMALL_TOL)
     pts = np.zeros((n, 3))
     pts[:, :rank] = r.V
-    return {"graph": graph, "W": W, "n": n, "rank": rank, "sdp": sdp.value, "value": r.value, "gap": sdp.value - r.value, "global": sdp.value - r.value <= B.global_gap(sdp.value), "points": pts, "history": r.history,
-            "sweeps": r.sweeps, "lam_min": cert["lam_min"], "certified": B.is_certified(cert, 1e-10), "success_rate": wins / 20.0, "exact": R.exact_maxcut(W)[0]}
+    return {"graph": graph, "W": W, "n": n, "rank": rank, "sdp": sdp.value, "value": r.value, "gap": sdp.value - r.value, "global": B.reached_optimum(r, sdp.value, C.SMALL_TOL), "points": pts, "history": r.history,
+            "sweeps": r.sweeps, "lam_min": cert["lam_min"], "certified": B.is_certified(cert, C.SMALL_TOL), "success_rate": wins / 20.0, "exact": R.exact_maxcut(W)[0]}
 
 
 # ----------------------------------------------------------------------------- Experiment 2 und 3: Rang und Zertifikat
@@ -139,7 +139,7 @@ def scan_view(s: Settings) -> dict:
                 r = B.mixing(W, p, rng, tol=s.tol)
                 c = B.certificate(W, r.V)
                 gap = ref["value"] - r.value
-                runs.append((p, c["lam_min"], gap, gap <= B.global_gap(ref["value"]), B.is_certified(c, s.tol)))
+                runs.append((p, c["lam_min"], gap, B.reached_optimum(r, ref["value"], s.tol), B.is_certified(c, s.tol)))
     arr = np.array(runs, float).reshape(-1, 5)                                       # leer, wenn alle Graphen keine Kante haben
     rate, cert_rate = {}, {}
     for p in ranks:
@@ -217,7 +217,7 @@ def rew_rows(seed: int = C.DEFAULT_SEED) -> list:
         total = G.total_weight(W)
         found = None
         for p in (1, 2, 3, 4):
-            wins = sum(total - B.mixing(W, p, rng, tol=1e-8).value <= B.global_gap(total) for _ in range(10))
+            wins = sum(B.reached_optimum(B.mixing(W, p, rng, tol=C.REW_TOL), total, C.REW_TOL) for _ in range(10))
             if wins >= 10:
                 found = p
                 break
@@ -232,9 +232,12 @@ def verdict_main(s: Settings, m: dict) -> tuple:
     head = (f"{graph_name(s)} (Seed {s.seed}, {m['edges']} Kanten), Rang p = {m['rank']}: der Lauf endet nach {m['sweeps']} Sweeps bei **{num(m['value'])}**; der zertifizierte Referenzwert (Rang {ref['p']}) ist "
             f"**{num(ref['value'])}**" + ("" if ref["certified"] else " (ohne Zertifikat: der beste von drei Läufen)") + ". ")
     if m["global"]:
-        tail = f"Der Lauf liegt bis auf die Schwelle am Optimalwert (Abstand {sci(max(m['gap'], 0.0))}). "
+        tail = f"Der Lauf hat das Optimum erreicht (Abstand {sci(max(m['gap'], 0.0))}, erlaubt sind {sci(m['allowance'])}: der Rest, den der Abstieg noch gewinnen würde, plus 100·Toleranz·Wert). "
+    elif not m.get("converged", True):
+        tail = f"Der Lauf ist nach {m['sweeps']} Sweeps (Grenze) **nicht konvergiert**; „Optimum erreicht“ verlangt einen konvergierten Lauf (Abstand {sci(m['gap'])}, erlaubt wären {sci(m['allowance'])}). "
     else:
-        tail = f"Der Lauf endet {de(m['gap'], 4)} **unter dem Optimum**: eine Falle, ein für diesen Graphen zu kleiner Rang oder (bei grober Toleranz) noch nicht konvergiert. "
+        tail = (f"Der Lauf endet {de(m['gap'], 4) if m['gap'] >= 0.01 else sci(m['gap'])} **unter dem Optimum** (erlaubt wären {sci(m['allowance'])}): eine Falle, ein Fixpunkt knapp darunter, ein für diesen Graphen zu kleiner Rang "
+                "oder (bei grober Toleranz) noch nicht konvergiert. ")
     cert = (f"Zertifikat aus V: kleinster Eigenwert von Z(V) {sci(m['lam_min'])}, " + ("**ja**, V Vᵀ ist numerisch zertifiziert optimal (höchstens n·|λ_min|/2 unter dem Optimum)" if m["certified"] else "**nein** (Falle, Sattel, ein Fixpunkt knapp unter dem Optimum oder zu grobe Toleranz)") + ".")
     ok = m["global"] and m["certified"]
     kind = "success" if ok else ("warning" if m["certified"] != m["global"] else "info")
@@ -253,7 +256,7 @@ def verdict_small(c: dict, rank: int) -> tuple:
 def verdict_scan(sc: dict, s: Settings) -> tuple:
     rates = ", ".join(f"p = {p}: {de(100.0 * sc['rate'][p], 0)} %" for p in sc["ranks"])
     sm = sc["smallest"]
-    text = (f"{sc['graphs']} Zufallsgraphen G({sc['n']}, {p_text(s.p)}) mit je {sc['starts']} Zufallsstarts je Rang, Anteil der Läufe, die bis auf die Schwelle am zertifizierten Optimalwert liegen: {rates}. "
+    text = (f"{sc['graphs']} Zufallsgraphen G({sc['n']}, {p_text(s.p)}) mit je {sc['starts']} Zufallsstarts je Rang, Anteil der Läufe, die den zertifizierten Referenzwert erreichen (Abstand höchstens der Rest des Abstiegs plus 100·Toleranz·Wert): {rates}. "
             + (f"Ab Rang **{sm}** gelingen mindestens 95 % der Läufe" if sm is not None else f"Bis Rang {sc['ranks'][-1]} erreicht kein Rang 95 %")
             + f"; die Theorie fordert für fast alle Kostenmatrizen p(p+1)/2 > n, also p ≥ {sc['theory_rank']} (√(2n) = {de(sc['sqrt_rank'], 1)}; Zufallsgraphen mit Gewicht 1 fallen nicht unter diese Aussage). Das ist eine Messung an Zufallsgraphen, keine Garantie: unterhalb der Theorie-Schwelle gibt es Fälle mit Fallen.")
     return "info", text
@@ -261,7 +264,7 @@ def verdict_scan(sc: dict, s: Settings) -> tuple:
 
 def verdict_certificate(t: dict, s: Settings) -> tuple:
     text = (f"{t['total']} Läufe: Zertifikat ja und Optimum erreicht {t['yes_global']}, Zertifikat ja aber Falle **{t['yes_trap']}** (in dieser Stichprobe; bei grober Toleranz und dünnen größeren Graphen kann es vorkommen), Zertifikat nein und Optimum erreicht {t['no_global']} "
-            f"(Toleranz {tol_text(s.tol)}: meist ein Fixpunkt knapp unter dem Optimum, selten ein Lauf knapp an der Schwelle), Zertifikat nein und Falle {t['no_trap']}. Kleinster Eigenwert von Z(V) bei Optima {sci(t['lam_global_min'])}, größter bei Fallen "
+            f"(Toleranz {tol_text(s.tol)}: ein Lauf, dessen kleinster Eigenwert knapp unter der Zertifikat-Schwelle liegt), Zertifikat nein und Falle {t['no_trap']}. Kleinster Eigenwert von Z(V) bei Optima {sci(t['lam_global_min'])}, größter bei Fallen "
             f"{sci(t['lam_trap_max'])}: in dieser Stichprobe liegen die beiden Gruppen weit auseinander.")
     return ("success" if t["yes_trap"] == 0 and t["lam_global_min"] > t["lam_trap_max"] else "warning"), text
 
